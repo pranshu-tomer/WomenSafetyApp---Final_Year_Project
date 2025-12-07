@@ -1,44 +1,58 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import React, { useEffect, useState } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { EmergencySetup } from './src/screens/EmergencySetup';
+import { HomeScreen } from './src/screens/HomeScreen';
+import { StorageService } from './src/services/StorageService';
 
 function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSetupComplete, setIsSetupComplete] = useState(false);
+
+  useEffect(() => {
+    checkSetupStatus();
+  }, []);
+
+  const checkSetupStatus = async () => {
+    const completed = await StorageService.isSetupCompleted();
+    setIsSetupComplete(completed);
+    setIsLoading(false);
+  };
+
+  const handleSetupComplete = () => {
+    setIsSetupComplete(true);
+  };
+
+  const handleReset = async () => {
+    await StorageService.clearStorage();
+    setIsSetupComplete(false);
+  }
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
+      {isSetupComplete ? (
+        <HomeScreen onReset={handleReset} />
+      ) : (
+        <EmergencySetup onSetupComplete={handleSetupComplete} />
+      )}
     </SafeAreaProvider>
   );
 }
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  container: {
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#111',
   },
 });
 

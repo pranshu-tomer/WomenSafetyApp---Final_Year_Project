@@ -116,4 +116,10 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // SafetyApp Dependencies
+    implementation project(':react-native-voice_voice')
+    implementation 'be.tarsos.dsp:core:2.5'
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
 }
