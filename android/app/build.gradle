@@ -118,8 +118,15 @@ dependencies {
     }
 
     // SafetyApp Dependencies
-    implementation project(':react-native-voice_voice')
+    implementation "com.facebook.react:react-native:+"  // From node_modules
+
     implementation 'be.tarsos.dsp:core:2.5'
+    implementation 'be.tarsos.dsp:jvm:2.5'
+
+    // TensorFlow Lite
     implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    
+    // Vosk Speech to Text
+    implementation 'com.alphacephei:vosk-android:0.3.47'
     implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
 }
