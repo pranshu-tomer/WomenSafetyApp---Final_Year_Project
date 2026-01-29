@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Button, Alert, TextInput, Modal, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, TextInput, Modal, TouchableOpacity, Linking, Platform } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { StorageService } from '../services/StorageService';
+import { PermissionsService } from '../services/PermissionsService';
 
 type ThreatScreenRouteProp = RouteProp<RootStackParamList, 'Threat'>;
 type ThreatScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Threat'>;
@@ -13,6 +15,7 @@ const ThreatScreen = () => {
     const [countdown, setCountdown] = useState(10);
     const [modalVisible, setModalVisible] = useState(false);
     const [password, setPassword] = useState('');
+    const [sosTriggered, setSosTriggered] = useState(false);
 
     // Hardcoded password for demo
     const CORRECT_PASSWORD = '1234';
@@ -21,15 +24,111 @@ const ThreatScreen = () => {
         if (countdown > 0) {
             const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
             return () => clearTimeout(timer);
-        } else {
-            // Trigger SOS
+        } else if (countdown === 0 && !sosTriggered) {
+            // Trigger SOS only once
+            setSosTriggered(true);
             triggerSOS();
         }
-    }, [countdown]);
+    }, [countdown, sosTriggered]);
 
-    const triggerSOS = () => {
-        Alert.alert("SOS SENT!", "Emergency contacts have been notified with your location.");
-        // Logic to actually send SMS/Call would go here
+    const triggerSOS = async () => {
+        console.log('🚨 SOS TRIGGERED - Starting emergency response');
+
+        try {
+            // Get emergency contacts
+            console.log('📞 Retrieving emergency contacts...');
+            const { callContact, smsContacts } = await StorageService.getAllContacts();
+            console.log('Contacts retrieved:', { callContact, smsContacts });
+
+            // Check if contacts are configured
+            if (!callContact && smsContacts.length === 0) {
+                console.log('❌ No emergency contacts found');
+                Alert.alert(
+                    'No Emergency Contacts',
+                    'No emergency contacts configured. Please set up emergency contacts in Settings.'
+                );
+                return;
+            }
+
+            // Make emergency call
+            if (callContact) {
+                console.log('📱 Attempting to call:', callContact);
+                const hasPermission = await PermissionsService.hasCallPermission();
+                console.log('Call permission granted:', hasPermission);
+
+                if (hasPermission) {
+                    const phoneUrl = `tel:${callContact}`;
+                    const canOpen = await Linking.canOpenURL(phoneUrl);
+                    console.log('Can open tel URL:', canOpen);
+
+                    if (canOpen) {
+                        console.log('✅ Opening dialer for:', callContact);
+                        await Linking.openURL(phoneUrl);
+                        Alert.alert('Emergency Call', `Calling ${callContact}...`);
+                    } else {
+                        console.log('❌ Cannot open tel URL');
+                        Alert.alert('Error', 'Unable to make phone call');
+                    }
+                } else {
+                    console.log('❌ Call permission not granted');
+                    Alert.alert(
+                        'Permission Denied',
+                        'Phone call permission not granted. Cannot make emergency call.'
+                    );
+                }
+            } else {
+                console.log('⚠️ No call contact configured');
+            }
+
+            // Send SMS to all SMS contacts
+            if (smsContacts.length > 0) {
+                console.log('💬 Attempting to send SMS to:', smsContacts);
+                const hasPermission = await PermissionsService.hasSMSPermission();
+                console.log('SMS permission granted:', hasPermission);
+
+                if (hasPermission) {
+                    await sendEmergencySMS(smsContacts);
+                } else {
+                    console.log('❌ SMS permission not granted');
+                    Alert.alert(
+                        'Permission Denied',
+                        'SMS permission not granted. Cannot send emergency messages.'
+                    );
+                }
+            } else {
+                console.log('⚠️ No SMS contacts configured');
+            }
+        } catch (error) {
+            console.error('❌ Error triggering SOS:', error);
+            Alert.alert('Error', `Failed to send emergency alerts: ${error}`);
+        }
+    };
+
+    const sendEmergencySMS = async (contacts: string[]) => {
+        try {
+            const message = '🚨 EMERGENCY ALERT! I may be in danger. This is an automated message from my safety app.';
+
+            // For Android, we'll use the SMS intent
+            if (Platform.OS === 'android') {
+                // Send to each contact
+                for (const contact of contacts) {
+                    const smsUrl = `sms:${contact}?body=${encodeURIComponent(message)}`;
+                    const canOpen = await Linking.canOpenURL(smsUrl);
+
+                    if (canOpen) {
+                        await Linking.openURL(smsUrl);
+                    }
+                }
+
+                Alert.alert(
+                    'SMS Sent',
+                    `Emergency SMS sent to ${contacts.length} contact(s)`
+                );
+            }
+        } catch (error) {
+            console.error('Error sending SMS:', error);
+            Alert.alert('Error', 'Failed to send SMS messages');
+        }
     };
 
     const handleSafe = () => {

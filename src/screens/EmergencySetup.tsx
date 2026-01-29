@@ -8,89 +8,166 @@ import {
     FlatList,
     StatusBar,
     Alert,
+    ScrollView,
 } from 'react-native';
 import { StorageService } from '../services/StorageService';
+import { PermissionsService } from '../services/PermissionsService';
 
 interface Props {
     onSetupComplete: () => void;
 }
 
 export const EmergencySetup: React.FC<Props> = ({ onSetupComplete }) => {
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [contacts, setContacts] = useState<string[]>([]);
+    const [callContact, setCallContact] = useState('');
+    const [smsPhoneNumber, setSmsPhoneNumber] = useState('');
+    const [smsContacts, setSmsContacts] = useState<string[]>([]);
 
-    const addContact = () => {
-        if (phoneNumber.length < 3) {
+    const addSmsContact = () => {
+        if (smsPhoneNumber.length < 3) {
             Alert.alert('Invalid Number', 'Please enter a valid phone number');
             return;
         }
-        if (contacts.includes(phoneNumber)) {
-            Alert.alert('Duplicate', 'This number is already added');
+        if (smsContacts.includes(smsPhoneNumber)) {
+            Alert.alert('Duplicate', 'This number is already added to SMS list');
             return;
         }
-        setContacts([...contacts, phoneNumber]);
-        setPhoneNumber('');
+        setSmsContacts([...smsContacts, smsPhoneNumber]);
+        setSmsPhoneNumber('');
     };
 
-    const removeContact = (index: number) => {
-        const newContacts = [...contacts];
+    const removeSmsContact = (index: number) => {
+        const newContacts = [...smsContacts];
         newContacts.splice(index, 1);
-        setContacts(newContacts);
+        setSmsContacts(newContacts);
     };
 
     const finishSetup = async () => {
-        if (contacts.length === 0) {
-            Alert.alert('No Contacts', 'Please add at least one emergency contact');
+        // Validate inputs
+        if (!callContact || callContact.length < 3) {
+            Alert.alert('Missing Call Contact', 'Please add a phone number for emergency calls');
             return;
         }
-        await StorageService.saveContacts(contacts);
-        onSetupComplete();
+        if (smsContacts.length === 0) {
+            Alert.alert('Missing SMS Contacts', 'Please add at least one contact for emergency SMS');
+            return;
+        }
+
+        // Request permissions
+        const permissions = await PermissionsService.requestAllEmergencyPermissions();
+
+        if (!permissions.call || !permissions.sms) {
+            let deniedPerms: 'call' | 'sms' | 'both' = 'both';
+            if (permissions.call && !permissions.sms) deniedPerms = 'sms';
+            if (!permissions.call && permissions.sms) deniedPerms = 'call';
+
+            PermissionsService.showPermissionDeniedAlert(deniedPerms);
+
+            // Still save contacts but warn user
+            Alert.alert(
+                'Warning',
+                'Some permissions were denied. Emergency features may not work properly. Continue anyway?',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Continue',
+                        onPress: async () => {
+                            await saveAndComplete();
+                        },
+                    },
+                ]
+            );
+            return;
+        }
+
+        await saveAndComplete();
+    };
+
+    const saveAndComplete = async () => {
+        try {
+            await StorageService.saveContacts(callContact, smsContacts);
+            Alert.alert('Setup Complete', 'Emergency contacts saved successfully!');
+            onSetupComplete();
+        } catch (error) {
+            Alert.alert('Error', 'Failed to save emergency contacts. Please try again.');
+            console.error('Error saving contacts:', error);
+        }
     };
 
     return (
-        <View style={styles.container}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
             <StatusBar barStyle="light-content" backgroundColor="#111" />
 
             <View style={styles.header}>
                 <Text style={styles.title}>Emergency Setup</Text>
                 <Text style={styles.subtitle}>
-                    Add contacts to call when danger is detected.
+                    Set up emergency contacts for calls and SMS alerts.
                 </Text>
             </View>
 
-            <View style={styles.inputContainer}>
+            {/* CALL CONTACT SECTION */}
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>📞 Emergency Call Contact</Text>
+                <Text style={styles.sectionSubtitle}>
+                    This contact will be called when threat is detected
+                </Text>
                 <TextInput
                     style={styles.input}
-                    placeholder="Enter Phone Number"
+                    placeholder="Enter Phone Number for Calls"
                     placeholderTextColor="#666"
                     keyboardType="phone-pad"
-                    value={phoneNumber}
-                    onChangeText={setPhoneNumber}
+                    value={callContact}
+                    onChangeText={setCallContact}
                 />
-                <TouchableOpacity style={styles.addButton} onPress={addContact}>
-                    <Text style={styles.addButtonText}>ADD</Text>
-                </TouchableOpacity>
-            </View>
-
-            <FlatList
-                data={contacts}
-                keyExtractor={(item, index) => index.toString()}
-                renderItem={({ item, index }) => (
+                {callContact ? (
                     <View style={styles.contactItem}>
-                        <Text style={styles.contactText}>{item}</Text>
-                        <TouchableOpacity onPress={() => removeContact(index)}>
+                        <Text style={styles.contactText}>📞 {callContact}</Text>
+                        <TouchableOpacity onPress={() => setCallContact('')}>
                             <Text style={styles.removeText}>✕</Text>
                         </TouchableOpacity>
                     </View>
-                )}
-                style={styles.list}
-                contentContainerStyle={styles.listContent}
-            />
+                ) : null}
+            </View>
+
+            {/* SMS CONTACTS SECTION */}
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>💬 SMS Alert Contacts</Text>
+                <Text style={styles.sectionSubtitle}>
+                    These contacts will receive SMS with your location
+                </Text>
+                <View style={styles.inputContainer}>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Enter Phone Number for SMS"
+                        placeholderTextColor="#666"
+                        keyboardType="phone-pad"
+                        value={smsPhoneNumber}
+                        onChangeText={setSmsPhoneNumber}
+                    />
+                    <TouchableOpacity style={styles.addButton} onPress={addSmsContact}>
+                        <Text style={styles.addButtonText}>ADD</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <FlatList
+                    data={smsContacts}
+                    keyExtractor={(item, index) => index.toString()}
+                    renderItem={({ item, index }) => (
+                        <View style={styles.contactItem}>
+                            <Text style={styles.contactText}>💬 {item}</Text>
+                            <TouchableOpacity onPress={() => removeSmsContact(index)}>
+                                <Text style={styles.removeText}>✕</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                    scrollEnabled={false}
+                    style={styles.list}
+                />
+            </View>
 
             <TouchableOpacity style={styles.finishButton} onPress={finishSetup}>
                 <Text style={styles.finishButtonText}>COMPLETE SETUP</Text>
             </TouchableOpacity>
-        </View>
+        </ScrollView>
     );
 };
 
@@ -98,7 +175,10 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#111',
+    },
+    contentContainer: {
         padding: 20,
+        paddingBottom: 40,
     },
     header: {
         marginTop: 40,
@@ -115,9 +195,24 @@ const styles = StyleSheet.create({
         color: '#aaa',
         lineHeight: 24,
     },
+    section: {
+        marginBottom: 30,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#fff',
+        marginBottom: 5,
+    },
+    sectionSubtitle: {
+        fontSize: 14,
+        color: '#888',
+        marginBottom: 15,
+        lineHeight: 20,
+    },
     inputContainer: {
         flexDirection: 'row',
-        marginBottom: 20,
+        marginBottom: 15,
     },
     input: {
         flex: 1,
@@ -128,6 +223,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         borderWidth: 1,
         borderColor: '#333',
+        marginBottom: 10,
     },
     addButton: {
         backgroundColor: '#007AFF',
@@ -143,10 +239,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     list: {
-        flex: 1,
-    },
-    listContent: {
-        paddingBottom: 20,
+        marginTop: 10,
     },
     contactItem: {
         flexDirection: 'row',
@@ -173,6 +266,7 @@ const styles = StyleSheet.create({
         padding: 20,
         borderRadius: 16,
         alignItems: 'center',
+        marginTop: 20,
         marginBottom: 20,
         shadowColor: '#34C759',
         shadowOffset: { width: 0, height: 4 },
